@@ -102,24 +102,27 @@
     window.addEventListener('load', () => imeInput.focus());
 
     document.addEventListener('keydown', (e) => {
-      if (e.keyCode === 229) return;
+      if (e.keyCode === 229) return;  // IME key — must reach imeInput
       if (isComposing) {
         if (e.key === 'Enter' || e.key === ' ') pendingKeydown = e;
-        return;
+        return;  // must reach imeInput for composition confirmation
       }
       psKeyDown(e.keyCode, e.repeat);
+      e.stopPropagation();  // block PS SDK bubble handler (prevents double-send)
     }, true);
 
     document.addEventListener('keyup', (e) => {
       if (e.keyCode === 229) return;
       if (isComposing) return;
       psKeyUp(e.keyCode);
+      e.stopPropagation();
     }, true);
 
     document.addEventListener('keypress', (e) => {
       if (isComposing) return;
       const cc = e.charCode || e.which;
       if (cc > 0) psKeyPress(cc);
+      e.stopPropagation();
     }, true);
 
   </script>
