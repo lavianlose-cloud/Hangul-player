@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Xemi</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; background: #000; overflow: hidden; }
+    #video-container { width: 100%; height: 100%; }
+    #video-container > div { width: 100% !important; height: 100% !important; }
+
+    /* Korean IME textarea — invisible, positioned off-screen but focusable */
+    #ime-input {
+      position: fixed;
+      left: -9999px;
+      top: 0;
+      width: 1px;
+      height: 1px;
+      opacity: 0;
+      border: none;
+      outline: none;
+      background: transparent;
+      color: transparent;
+      caret-color: transparent;
+      font-size: 16px; /* prevent iOS zoom */
+      z-index: 9999;
+    }
+  </style>
+</head>
+<body>
+  <div id="video-container"></div>
+  <textarea id="ime-input" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"></textarea>
+
+  <script type="module">
+    import { ArcwareInit } from 'https://unpkg.com/@arcware-cloud/pixelstreaming-websdk@1.4.11/index.mjs';
+
+    // ── Arcware init ──────────────────────────────────────────────────────────
+    const { Config, PixelStreaming, Application } = ArcwareInit(
+      { shareId: 'share-f7b5124c-4b49-4a28-a24f-75f83bf12de4' },
+      {
+        initialSettings: {
+          AutoPlayVideo: true,
+          AutoConnect: true,
+          ss: '',
+          StartVideoMuted: false,
+          HoveringMouse: false,
+        }
+      }
+    );
+
+    document.getElementById('video-container').appendChild(Application.rootElement);
+
+    // ── Korean IME fix ────────────────────────────────────────────────────────
+    // Arcware / Pixel Streaming intercepts keyboard events on the video element,
+    // which breaks Korean (and other CJK) IME composition. Work-around:
+    //   1. Keep a hidden textarea focused whenever the user types.
+    //   2. Let the browser do IME composition inside the textarea.
+    //   3. On compositionend, grab the composed string and forward each codepoint
+    //      to the streamer via the KeyPress message.
+    //   4. For non-IME keys (Enter, Backspace, Latin, …) re-dispatch them so the
+    //      Pixel Streaming layer handles them normally.
+
+    const imeInput = document.getElementById('ime-input');
+    let isComposing = false;
+
+    // Helper: send a single Unicode code-point as a PS KeyPress message
+    function sendKeyPress(charCode) {
+      try {
+        // Try the internal path used by Epic's Pixel Streaming JS library
+        const toStreamer =
+          PixelStreaming?._webRtcController?.streamMessageController?.toStreamerHandlers;
+        if (toStreamer?.has('KeyPress')) {
+          toStreamer.get('KeyPress')([charCode]);
+          return;
+        }
+      } catch (_) {}
+
+      // Fallback: synthesise a keypress event on the video / canvas element
+      try {
+        const target =
+          Application.rootElement.querySelector('video') ||
+          Application.rootElement.querySelector('canvas') ||
+          Application.rootElement;
+        target.dispatchEvent(new KeyboardEvent('keypress', {
+          bubbles: true, cancelable: true, charCode, keyCode: charCode, which: charCode
+        }));
+      } catch (_) {}
+    }
+
+    // After IME composition ends, forward each character in the composed string
+    imeInput.addEventListener('compositionend', (e) => {
+      isComposing = false;
+      const text = e.data || '';
+      for (const ch of text) {
+        sendKeyPress(ch.codePointAt(0));
+      }
+      // Clear the textarea so repeated composition starts clean
+      imeInput.value = '';
+    });
+
+    imeInput.addEventListener('compositionstart', () => { isComposing = true; });
+    imeInput.addEventListener('compositionupdate', () => { isComposing = true; });
+
+    // Non-IME keydown: forward to the video/canvas element
+    imeInput.addEventListener('keydown', (e) => {
+      if (isComposing) return;
+      try {
+        const target =
+          Application.rootElement.querySelector('video') ||
+          Application.rootElement.querySelector('canvas') ||
+          Application.rootElement;
+        target.dispatchEvent(new KeyboardEvent('keydown', {
+          bubbles: true, cancelable: true,
+          key: e.key, code: e.code, keyCode: e.keyCode,
+          shiftKey: e.shiftKey, ctrlKey: e.ctrlKey, altKey: e.altKey
+        }));
+      } catch (_) {}
+    });
+
+    imeInput.addEventListener('keyup', (e) => {
+      if (isComposing) return;
+      try {
+        const target =
+          Application.rootElement.querySelector('video') ||
+          Application.rootElement.querySelector('canvas') ||
+          Application.rootElement;
+        target.dispatchEvent(new KeyboardEvent('keyup', {
+          bubbles: true, cancelable: true,
+          key: e.key, code: e.code, keyCode: e.keyCode,
+          shiftKey: e.shiftKey, ctrlKey: e.ctrlKey, altKey: e.altKey
+        }));
+      } catch (_) {}
+    });
+
+    // Focus the hidden textarea whenever the user clicks anywhere on the page
+    document.addEventListener('click', () => imeInput.focus(), true);
+    document.addEventListener('touchstart', () => imeInput.focus(), true);
+
+    // Also focus after the Arcware video element renders
+    Application.rootElement.addEventListener('click', () => imeInput.focus(), true);
+
+    // Auto-focus on load
+    window.addEventListener('load', () => imeInput.focus());
+  </script>
+</body>
+</html>
