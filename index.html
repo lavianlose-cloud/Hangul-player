@@ -10,7 +10,6 @@
     #video-container { width: 100%; height: 100%; }
     #video-container > div { width: 100% !important; height: 100% !important; }
 
-    /* Korean IME textarea — invisible, positioned off-screen but focusable */
     #ime-input {
       position: fixed;
       left: -9999px;
@@ -23,7 +22,7 @@
       background: transparent;
       color: transparent;
       caret-color: transparent;
-      font-size: 16px; /* prevent iOS zoom */
+      font-size: 16px;
       z-index: 9999;
     }
   </style>
@@ -35,7 +34,6 @@
   <script type="module">
     import { ArcwareInit } from 'https://unpkg.com/@arcware-cloud/pixelstreaming-websdk@1.4.11/index.mjs';
 
-    // ── Arcware init ──────────────────────────────────────────────────────────
     const { Config, PixelStreaming, Application } = ArcwareInit(
       { shareId: 'share-f7b5124c-4b49-4a28-a24f-75f83bf12de4' },
       {
@@ -44,6 +42,7 @@
           AutoConnect: true,
           StartVideoMuted: false,
           HoveringMouse: false,
+          UseMic: true,
         }
       }
     );
@@ -51,22 +50,29 @@
     document.getElementById('video-container').appendChild(Application.rootElement);
 
     // ── Korean IME fix ────────────────────────────────────────────────────────
-    // Arcware / Pixel Streaming intercepts keyboard events on the video element,
-    // which breaks Korean (and other CJK) IME composition. Work-around:
-    //   1. Keep a hidden textarea focused whenever the user types.
-    //   2. Let the browser do IME composition inside the textarea.
-    //   3. On compositionend, grab the composed string and forward each codepoint
-    //      to the streamer via the KeyPress message.
-    //   4. For non-IME keys (Enter, Backspace, Latin, …) re-dispatch them so the
-    //      Pixel Streaming layer handles them normally.
 
     const imeInput = document.getElementById('ime-input');
     let isComposing = false;
+    let pendingKeydownEvent = null; // Enter/Space pressed during composition — deferred
 
-    // Helper: send a single Unicode code-point as a PS KeyPress message
+    function getTarget() {
+      return Application.rootElement.querySelector('video')
+          || Application.rootElement.querySelector('canvas')
+          || Application.rootElement;
+    }
+
+    function forwardKeyEvent(type, e) {
+      try {
+        getTarget().dispatchEvent(new KeyboardEvent(type, {
+          bubbles: true, cancelable: true,
+          key: e.key, code: e.code, keyCode: e.keyCode,
+          shiftKey: e.shiftKey, ctrlKey: e.ctrlKey, altKey: e.altKey
+        }));
+      } catch (_) {}
+    }
+
     function sendKeyPress(charCode) {
       try {
-        // Try the internal path used by Epic's Pixel Streaming JS library
         const toStreamer =
           PixelStreaming?._webRtcController?.streamMessageController?.toStreamerHandlers;
         if (toStreamer?.has('KeyPress')) {
@@ -74,72 +80,51 @@
           return;
         }
       } catch (_) {}
-
-      // Fallback: synthesise a keypress event on the video / canvas element
       try {
-        const target =
-          Application.rootElement.querySelector('video') ||
-          Application.rootElement.querySelector('canvas') ||
-          Application.rootElement;
-        target.dispatchEvent(new KeyboardEvent('keypress', {
+        getTarget().dispatchEvent(new KeyboardEvent('keypress', {
           bubbles: true, cancelable: true, charCode, keyCode: charCode, which: charCode
         }));
       } catch (_) {}
     }
 
-    // After IME composition ends, forward each character in the composed string
+    imeInput.addEventListener('compositionstart', () => { isComposing = true; });
+    imeInput.addEventListener('compositionupdate', () => { isComposing = true; });
+
     imeInput.addEventListener('compositionend', (e) => {
       isComposing = false;
       const text = e.data || '';
       for (const ch of text) {
         sendKeyPress(ch.codePointAt(0));
       }
-      // Clear the textarea so repeated composition starts clean
       imeInput.value = '';
+
+      // Flush Enter/Space that was pressed to end this composition
+      if (pendingKeydownEvent) {
+        const pending = pendingKeydownEvent;
+        pendingKeydownEvent = null;
+        forwardKeyEvent('keydown', pending);
+      }
     });
 
-    imeInput.addEventListener('compositionstart', () => { isComposing = true; });
-    imeInput.addEventListener('compositionupdate', () => { isComposing = true; });
-
-    // Non-IME keydown: forward to the video/canvas element
     imeInput.addEventListener('keydown', (e) => {
-      if (isComposing) return;
-      try {
-        const target =
-          Application.rootElement.querySelector('video') ||
-          Application.rootElement.querySelector('canvas') ||
-          Application.rootElement;
-        target.dispatchEvent(new KeyboardEvent('keydown', {
-          bubbles: true, cancelable: true,
-          key: e.key, code: e.code, keyCode: e.keyCode,
-          shiftKey: e.shiftKey, ctrlKey: e.ctrlKey, altKey: e.altKey
-        }));
-      } catch (_) {}
+      if (isComposing) {
+        // Enter / Space end composition — defer keydown until compositionend fires
+        if (e.key === 'Enter' || e.key === ' ') {
+          pendingKeydownEvent = e;
+        }
+        return;
+      }
+      forwardKeyEvent('keydown', e);
     });
 
     imeInput.addEventListener('keyup', (e) => {
-      if (isComposing) return;
-      try {
-        const target =
-          Application.rootElement.querySelector('video') ||
-          Application.rootElement.querySelector('canvas') ||
-          Application.rootElement;
-        target.dispatchEvent(new KeyboardEvent('keyup', {
-          bubbles: true, cancelable: true,
-          key: e.key, code: e.code, keyCode: e.keyCode,
-          shiftKey: e.shiftKey, ctrlKey: e.ctrlKey, altKey: e.altKey
-        }));
-      } catch (_) {}
+      // By keyup, compositionend has already fired (isComposing is false)
+      forwardKeyEvent('keyup', e);
     });
 
-    // Focus the hidden textarea whenever the user clicks anywhere on the page
     document.addEventListener('click', () => imeInput.focus(), true);
     document.addEventListener('touchstart', () => imeInput.focus(), true);
-
-    // Also focus after the Arcware video element renders
     Application.rootElement.addEventListener('click', () => imeInput.focus(), true);
-
-    // Auto-focus on load
     window.addEventListener('load', () => imeInput.focus());
   </script>
 </body>
