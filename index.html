@@ -49,33 +49,27 @@
 
     document.getElementById('video-container').appendChild(Application.rootElement);
 
-    // ── PS data channel helpers ───────────────────────────────────────────────
-
     function getHandlers() {
       return PixelStreaming?._webRtcController?.streamMessageController?.toStreamerHandlers;
     }
-
     function psKeyDown(keyCode, isRepeat) {
       const h = getHandlers();
       if (h?.has('KeyDown')) { h.get('KeyDown')([keyCode, isRepeat ? 1 : 0]); return; }
       const t = psTarget();
       if (t) t.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, cancelable: true, keyCode, which: keyCode }));
     }
-
     function psKeyUp(keyCode) {
       const h = getHandlers();
       if (h?.has('KeyUp')) { h.get('KeyUp')([keyCode]); return; }
       const t = psTarget();
       if (t) t.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, cancelable: true, keyCode, which: keyCode }));
     }
-
     function psKeyPress(charCode) {
       const h = getHandlers();
       if (h?.has('KeyPress')) { h.get('KeyPress')([charCode]); return; }
       const t = psTarget();
       if (t) t.dispatchEvent(new KeyboardEvent('keypress', { bubbles: true, cancelable: true, charCode, which: charCode }));
     }
-
     function psTarget() {
       return Application.rootElement.querySelector('video')
           || Application.rootElement.querySelector('canvas')
@@ -83,7 +77,6 @@
     }
 
     // ── Korean IME ────────────────────────────────────────────────────────────
-
     const imeInput = document.getElementById('ime-input');
     let isComposing = false;
     let pendingKeydown = null;
@@ -104,16 +97,18 @@
     });
 
     // ── Document-level keyboard capture ──────────────────────────────────────
-    // Capture phase: fires before any element handler, regardless of focus.
-    // This ensures T-key PTT and all other keys reach PS even when the
-    // PS container has stolen focus from imeInput.
-
-    document.addEventListener('click', () => setTimeout(() => imeInput.focus(), 0));
-    window.addEventListener('load', () => imeInput.focus());
+    let gameActive = false;
+    document.addEventListener('click', () => {
+      gameActive = true;
+      setTimeout(() => imeInput.focus(), 0);
+    });
+    window.addEventListener('blur',  () => { gameActive = false; });
+    window.addEventListener('focus', () => { gameActive = true;  });
+    window.addEventListener('load',  () => { gameActive = true; imeInput.focus(); });
 
     document.addEventListener('keydown', (e) => {
-      if (e.ctrlKey || e.metaKey) return; // 브라우저 단축키 제외
-      if (e.keyCode === 229) return;       // IME 조합 키
+      if (!gameActive) return;
+      if (e.keyCode === 229) return;
       if (isComposing) {
         if (e.key === 'Enter' || e.key === ' ') pendingKeydown = e;
         return;
@@ -122,14 +117,14 @@
     }, true);
 
     document.addEventListener('keyup', (e) => {
-      if (e.ctrlKey || e.metaKey) return;
+      if (!gameActive) return;
       if (e.keyCode === 229) return;
       if (isComposing) return;
       psKeyUp(e.keyCode);
     }, true);
 
     document.addEventListener('keypress', (e) => {
-      if (e.ctrlKey || e.metaKey) return;
+      if (!gameActive) return;
       if (isComposing) return;
       const cc = e.charCode || e.which;
       if (cc > 0) psKeyPress(cc);
