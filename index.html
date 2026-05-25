@@ -49,9 +49,14 @@
 
     document.getElementById('video-container').appendChild(Application.rootElement);
 
-    // ── PS data channel helpers ───────────────────────────────────────────────
-    // Send keyboard messages directly through the WebRTC data channel.
-    // This bypasses DOM event bubbling/isTrusted issues entirely.
+    // ── Debug: PS 객체 구조 확인 ─────────────────────────────────────────────
+    setTimeout(() => {
+      console.log('[DEBUG] PixelStreaming keys:', Object.keys(PixelStreaming || {}));
+      console.log('[DEBUG] _webRtcController:', PixelStreaming?._webRtcController);
+      const h = PixelStreaming?._webRtcController?.streamMessageController?.toStreamerHandlers;
+      console.log('[DEBUG] toStreamerHandlers:', h);
+      if (h) console.log('[DEBUG] handler keys:', [...h.keys()]);
+    }, 3000); // 3초 후 WebRTC 연결 완료 예상
 
     function getHandlers() {
       return PixelStreaming?._webRtcController?.streamMessageController?.toStreamerHandlers;
@@ -59,8 +64,13 @@
 
     function psKeyDown(keyCode, isRepeat) {
       const h = getHandlers();
-      if (h?.has('KeyDown')) { h.get('KeyDown')([keyCode, isRepeat ? 1 : 0]); return; }
-      // Fallback: dispatch on PS element
+      console.log('[KEY] KeyDown', keyCode, '| handlers:', !!h, '| hasKeyDown:', h?.has('KeyDown'));
+      if (h?.has('KeyDown')) {
+        h.get('KeyDown')([keyCode, isRepeat ? 1 : 0]);
+        console.log('[KEY] KeyDown sent via data channel');
+        return;
+      }
+      console.log('[KEY] KeyDown fallback → DOM dispatch');
       const t = psTarget();
       if (t) t.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, cancelable: true, keyCode, which: keyCode }));
     }
@@ -89,7 +99,7 @@
 
     const imeInput = document.getElementById('ime-input');
     let isComposing = false;
-    let pendingKeydown = null; // Enter/Space pressed to end composition — deferred
+    let pendingKeydown = null;
 
     imeInput.addEventListener('compositionstart', () => { isComposing = true; });
     imeInput.addEventListener('compositionupdate', () => { isComposing = true; });
@@ -100,8 +110,6 @@
         psKeyPress(ch.codePointAt(0));
       }
       imeInput.value = '';
-
-      // Flush deferred key (Enter/Space that triggered compositionend)
       if (pendingKeydown) {
         const kc = pendingKeydown.keyCode;
         pendingKeydown = null;
@@ -129,7 +137,6 @@
       psKeyUp(e.keyCode);
     });
 
-    // Keep textarea focused so Korean IME works
     document.addEventListener('click', () => imeInput.focus(), true);
     document.addEventListener('touchstart', () => imeInput.focus(), true);
     Application.rootElement.addEventListener('click', () => imeInput.focus(), true);
