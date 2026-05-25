@@ -101,17 +101,7 @@
     document.addEventListener('click', () => setTimeout(() => imeInput.focus(), 0));
     window.addEventListener('load', () => imeInput.focus());
 
-    // gameActive 대신 activeElement 체크 — DevTools 열어도 영향 없음
-    function inGameContext() {
-      const ae = document.activeElement;
-      return ae === imeInput
-          || ae === document.body
-          || ae == null
-          || (Application.rootElement && Application.rootElement.contains(ae));
-    }
-
     document.addEventListener('keydown', (e) => {
-      if (!inGameContext()) return;
       if (e.keyCode === 229) return;
       if (isComposing) {
         if (e.key === 'Enter' || e.key === ' ') pendingKeydown = e;
@@ -121,14 +111,12 @@
     }, true);
 
     document.addEventListener('keyup', (e) => {
-      if (!inGameContext()) return;
       if (e.keyCode === 229) return;
       if (isComposing) return;
       psKeyUp(e.keyCode);
     }, true);
 
     document.addEventListener('keypress', (e) => {
-      if (!inGameContext()) return;
       if (isComposing) return;
       const cc = e.charCode || e.which;
       if (cc > 0) psKeyPress(cc);
