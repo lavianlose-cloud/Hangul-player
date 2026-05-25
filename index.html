@@ -108,14 +108,14 @@
         return;  // must reach imeInput for composition confirmation
       }
       psKeyDown(e.keyCode, e.repeat);
-      e.stopPropagation();  // block PS SDK bubble handler (prevents double-send)
+      if (e.keyCode !== 8) e.stopPropagation();  // Backspace: allow PS SDK bubble as backup
     }, true);
 
     document.addEventListener('keyup', (e) => {
       if (e.keyCode === 229) return;
       if (isComposing) return;
       psKeyUp(e.keyCode);
-      e.stopPropagation();
+      if (e.keyCode !== 8) e.stopPropagation();  // Backspace: allow PS SDK bubble as backup
     }, true);
 
     document.addEventListener('keypress', (e) => {
