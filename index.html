@@ -54,6 +54,7 @@
     }
     function psKeyDown(keyCode, isRepeat) {
       const h = getHandlers();
+      console.log('[KEY] Down', keyCode, 'chan:', !!h?.has('KeyDown'));
       if (h?.has('KeyDown')) { h.get('KeyDown')([keyCode, isRepeat ? 1 : 0]); return; }
       const t = psTarget();
       if (t) t.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, cancelable: true, keyCode, which: keyCode }));
