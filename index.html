@@ -49,79 +49,87 @@
 
     document.getElementById('video-container').appendChild(Application.rootElement);
 
-    // ── Korean IME fix ────────────────────────────────────────────────────────
+    // ── PS data channel helpers ───────────────────────────────────────────────
+    // Send keyboard messages directly through the WebRTC data channel.
+    // This bypasses DOM event bubbling/isTrusted issues entirely.
 
-    const imeInput = document.getElementById('ime-input');
-    let isComposing = false;
-    let pendingKeydownEvent = null; // Enter/Space pressed during composition — deferred
+    function getHandlers() {
+      return PixelStreaming?._webRtcController?.streamMessageController?.toStreamerHandlers;
+    }
 
-    function getTarget() {
+    function psKeyDown(keyCode, isRepeat) {
+      const h = getHandlers();
+      if (h?.has('KeyDown')) { h.get('KeyDown')([keyCode, isRepeat ? 1 : 0]); return; }
+      // Fallback: dispatch on PS element
+      const t = psTarget();
+      if (t) t.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, cancelable: true, keyCode, which: keyCode }));
+    }
+
+    function psKeyUp(keyCode) {
+      const h = getHandlers();
+      if (h?.has('KeyUp')) { h.get('KeyUp')([keyCode]); return; }
+      const t = psTarget();
+      if (t) t.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, cancelable: true, keyCode, which: keyCode }));
+    }
+
+    function psKeyPress(charCode) {
+      const h = getHandlers();
+      if (h?.has('KeyPress')) { h.get('KeyPress')([charCode]); return; }
+      const t = psTarget();
+      if (t) t.dispatchEvent(new KeyboardEvent('keypress', { bubbles: true, cancelable: true, charCode, which: charCode }));
+    }
+
+    function psTarget() {
       return Application.rootElement.querySelector('video')
           || Application.rootElement.querySelector('canvas')
           || Application.rootElement;
     }
 
-    function forwardKeyEvent(type, e) {
-      try {
-        getTarget().dispatchEvent(new KeyboardEvent(type, {
-          bubbles: true, cancelable: true,
-          key: e.key, code: e.code, keyCode: e.keyCode,
-          shiftKey: e.shiftKey, ctrlKey: e.ctrlKey, altKey: e.altKey
-        }));
-      } catch (_) {}
-    }
+    // ── Korean IME fix ────────────────────────────────────────────────────────
 
-    function sendKeyPress(charCode) {
-      try {
-        const toStreamer =
-          PixelStreaming?._webRtcController?.streamMessageController?.toStreamerHandlers;
-        if (toStreamer?.has('KeyPress')) {
-          toStreamer.get('KeyPress')([charCode]);
-          return;
-        }
-      } catch (_) {}
-      try {
-        getTarget().dispatchEvent(new KeyboardEvent('keypress', {
-          bubbles: true, cancelable: true, charCode, keyCode: charCode, which: charCode
-        }));
-      } catch (_) {}
-    }
+    const imeInput = document.getElementById('ime-input');
+    let isComposing = false;
+    let pendingKeydown = null; // Enter/Space pressed to end composition — deferred
 
     imeInput.addEventListener('compositionstart', () => { isComposing = true; });
     imeInput.addEventListener('compositionupdate', () => { isComposing = true; });
 
     imeInput.addEventListener('compositionend', (e) => {
       isComposing = false;
-      const text = e.data || '';
-      for (const ch of text) {
-        sendKeyPress(ch.codePointAt(0));
+      for (const ch of (e.data || '')) {
+        psKeyPress(ch.codePointAt(0));
       }
       imeInput.value = '';
 
-      // Flush Enter/Space that was pressed to end this composition
-      if (pendingKeydownEvent) {
-        const pending = pendingKeydownEvent;
-        pendingKeydownEvent = null;
-        forwardKeyEvent('keydown', pending);
+      // Flush deferred key (Enter/Space that triggered compositionend)
+      if (pendingKeydown) {
+        const kc = pendingKeydown.keyCode;
+        pendingKeydown = null;
+        psKeyDown(kc, false);
+        if (kc === 13 || kc === 32) psKeyPress(kc);
       }
     });
 
     imeInput.addEventListener('keydown', (e) => {
       if (isComposing) {
-        // Enter / Space end composition — defer keydown until compositionend fires
-        if (e.key === 'Enter' || e.key === ' ') {
-          pendingKeydownEvent = e;
-        }
+        if (e.key === 'Enter' || e.key === ' ') pendingKeydown = e;
         return;
       }
-      forwardKeyEvent('keydown', e);
+      psKeyDown(e.keyCode, e.repeat);
+    });
+
+    imeInput.addEventListener('keypress', (e) => {
+      if (isComposing) return;
+      const cc = e.charCode || e.which;
+      if (cc > 0) psKeyPress(cc);
     });
 
     imeInput.addEventListener('keyup', (e) => {
-      // By keyup, compositionend has already fired (isComposing is false)
-      forwardKeyEvent('keyup', e);
+      if (isComposing) return;
+      psKeyUp(e.keyCode);
     });
 
+    // Keep textarea focused so Korean IME works
     document.addEventListener('click', () => imeInput.focus(), true);
     document.addEventListener('touchstart', () => imeInput.focus(), true);
     Application.rootElement.addEventListener('click', () => imeInput.focus(), true);
