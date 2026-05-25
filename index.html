@@ -87,38 +87,12 @@
     const imeInput = document.getElementById('ime-input');
     let isComposing = false;
     let pendingKeydown = null;
-    let previewChar = null; // compositionupdate로 미리 보낸 글자 (다음 업데이트 전에 Backspace로 제거)
 
-    function psBackspace() {
-      psKeyDown(8, false); // Backspace keyDown
-      psKeyUp(8);
-    }
-
-    imeInput.addEventListener('compositionstart', () => {
-      isComposing = true;
-      console.log('[IME] start');
-    });
-
-    imeInput.addEventListener('compositionupdate', (e) => {
-      isComposing = true;
-      console.log('[IME] update data="' + e.data + '" preview="' + previewChar + '"');
-      if (!e.data) return;
-      if (previewChar !== null) {
-        console.log('[IME] Backspace to remove preview "' + previewChar + '"');
-        psBackspace();
-      }
-      psKeyPress(e.data.codePointAt(0));
-      previewChar = e.data;
-    });
+    imeInput.addEventListener('compositionstart', () => { isComposing = true; });
+    imeInput.addEventListener('compositionupdate', () => { isComposing = true; });
 
     imeInput.addEventListener('compositionend', (e) => {
       isComposing = false;
-      console.log('[IME] end data="' + e.data + '" preview="' + previewChar + '"');
-      if (previewChar !== null) {
-        console.log('[IME] Backspace to remove final preview "' + previewChar + '"');
-        psBackspace();
-        previewChar = null;
-      }
       for (const ch of (e.data || '')) psKeyPress(ch.codePointAt(0));
       imeInput.value = '';
       if (pendingKeydown) {
@@ -134,35 +108,28 @@
     // This ensures T-key PTT and all other keys reach PS even when the
     // PS container has stolen focus from imeInput.
 
-    let gameActive = false;
-    document.addEventListener('click', () => {
-      gameActive = true;
-      // Defer focus to imeInput so Korean IME keeps working
-      setTimeout(() => imeInput.focus(), 0);
-    });
-    window.addEventListener('blur', () => { gameActive = false; });
-    window.addEventListener('focus', () => { gameActive = true; });
-    window.addEventListener('load', () => { gameActive = true; imeInput.focus(); });
+    document.addEventListener('click', () => setTimeout(() => imeInput.focus(), 0));
+    window.addEventListener('load', () => imeInput.focus());
 
     document.addEventListener('keydown', (e) => {
-      if (!gameActive) return;
-      if (e.keyCode === 229) return; // IME composition key — handled by compositionend
+      if (e.ctrlKey || e.metaKey) return; // 브라우저 단축키 제외
+      if (e.keyCode === 229) return;       // IME 조합 키
       if (isComposing) {
         if (e.key === 'Enter' || e.key === ' ') pendingKeydown = e;
         return;
       }
       psKeyDown(e.keyCode, e.repeat);
-    }, true); // capture phase
+    }, true);
 
     document.addEventListener('keyup', (e) => {
-      if (!gameActive) return;
+      if (e.ctrlKey || e.metaKey) return;
       if (e.keyCode === 229) return;
       if (isComposing) return;
       psKeyUp(e.keyCode);
     }, true);
 
     document.addEventListener('keypress', (e) => {
-      if (!gameActive) return;
+      if (e.ctrlKey || e.metaKey) return;
       if (isComposing) return;
       const cc = e.charCode || e.which;
       if (cc > 0) psKeyPress(cc);
