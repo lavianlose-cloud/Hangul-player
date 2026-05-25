@@ -57,7 +57,6 @@
 
     function psKeyDown(keyCode, isRepeat) {
       const h = getHandlers();
-      console.log('[KEY] Down', keyCode, 'chan:', !!h?.has('KeyDown'));
       if (h?.has('KeyDown')) { h.get('KeyDown')([keyCode, isRepeat ? 1 : 0]); return; }
       const t = psTarget();
       if (t) t.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, cancelable: true, keyCode, which: keyCode }));
@@ -88,12 +87,32 @@
     const imeInput = document.getElementById('ime-input');
     let isComposing = false;
     let pendingKeydown = null;
+    let previewChar = null; // compositionupdate로 미리 보낸 글자 (다음 업데이트 전에 Backspace로 제거)
+
+    function psBackspace() {
+      psKeyDown(8, false); // Backspace keyDown
+      psKeyUp(8);
+    }
 
     imeInput.addEventListener('compositionstart', () => { isComposing = true; });
-    imeInput.addEventListener('compositionupdate', () => { isComposing = true; });
+
+    imeInput.addEventListener('compositionupdate', (e) => {
+      isComposing = true;
+      if (!e.data) return;
+      // 이전 미리보기 글자 삭제
+      if (previewChar !== null) psBackspace();
+      // 현재 조합 중인 글자 전송 (실시간 반영)
+      psKeyPress(e.data.codePointAt(0));
+      previewChar = e.data;
+    });
 
     imeInput.addEventListener('compositionend', (e) => {
       isComposing = false;
+      // 미리보기 글자 삭제 후 확정된 글자 전송
+      if (previewChar !== null) {
+        psBackspace();
+        previewChar = null;
+      }
       for (const ch of (e.data || '')) psKeyPress(ch.codePointAt(0));
       imeInput.value = '';
       if (pendingKeydown) {
