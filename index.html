@@ -49,14 +49,7 @@
 
     document.getElementById('video-container').appendChild(Application.rootElement);
 
-    // ── Debug: PS 객체 구조 확인 ─────────────────────────────────────────────
-    setTimeout(() => {
-      console.log('[DEBUG] PixelStreaming keys:', Object.keys(PixelStreaming || {}));
-      console.log('[DEBUG] _webRtcController:', PixelStreaming?._webRtcController);
-      const h = PixelStreaming?._webRtcController?.streamMessageController?.toStreamerHandlers;
-      console.log('[DEBUG] toStreamerHandlers:', h);
-      if (h) console.log('[DEBUG] handler keys:', [...h.keys()]);
-    }, 3000); // 3초 후 WebRTC 연결 완료 예상
+    // ── PS data channel helpers ───────────────────────────────────────────────
 
     function getHandlers() {
       return PixelStreaming?._webRtcController?.streamMessageController?.toStreamerHandlers;
@@ -64,13 +57,8 @@
 
     function psKeyDown(keyCode, isRepeat) {
       const h = getHandlers();
-      console.log('[KEY] KeyDown', keyCode, '| handlers:', !!h, '| hasKeyDown:', h?.has('KeyDown'));
-      if (h?.has('KeyDown')) {
-        h.get('KeyDown')([keyCode, isRepeat ? 1 : 0]);
-        console.log('[KEY] KeyDown sent via data channel');
-        return;
-      }
-      console.log('[KEY] KeyDown fallback → DOM dispatch');
+      console.log('[KEY] Down', keyCode, 'chan:', !!h?.has('KeyDown'));
+      if (h?.has('KeyDown')) { h.get('KeyDown')([keyCode, isRepeat ? 1 : 0]); return; }
       const t = psTarget();
       if (t) t.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, cancelable: true, keyCode, which: keyCode }));
     }
@@ -95,7 +83,7 @@
           || Application.rootElement;
     }
 
-    // ── Korean IME fix ────────────────────────────────────────────────────────
+    // ── Korean IME ────────────────────────────────────────────────────────────
 
     const imeInput = document.getElementById('ime-input');
     let isComposing = false;
@@ -106,9 +94,7 @@
 
     imeInput.addEventListener('compositionend', (e) => {
       isComposing = false;
-      for (const ch of (e.data || '')) {
-        psKeyPress(ch.codePointAt(0));
-      }
+      for (const ch of (e.data || '')) psKeyPress(ch.codePointAt(0));
       imeInput.value = '';
       if (pendingKeydown) {
         const kc = pendingKeydown.keyCode;
@@ -118,29 +104,45 @@
       }
     });
 
-    imeInput.addEventListener('keydown', (e) => {
+    // ── Document-level keyboard capture ──────────────────────────────────────
+    // Capture phase: fires before any element handler, regardless of focus.
+    // This ensures T-key PTT and all other keys reach PS even when the
+    // PS container has stolen focus from imeInput.
+
+    let gameActive = false;
+    document.addEventListener('click', () => {
+      gameActive = true;
+      // Defer focus to imeInput so Korean IME keeps working
+      setTimeout(() => imeInput.focus(), 0);
+    });
+    window.addEventListener('blur', () => { gameActive = false; });
+    window.addEventListener('focus', () => { gameActive = true; });
+    window.addEventListener('load', () => { gameActive = true; imeInput.focus(); });
+
+    document.addEventListener('keydown', (e) => {
+      if (!gameActive) return;
+      if (e.keyCode === 229) return; // IME composition key — handled by compositionend
       if (isComposing) {
         if (e.key === 'Enter' || e.key === ' ') pendingKeydown = e;
         return;
       }
       psKeyDown(e.keyCode, e.repeat);
-    });
+    }, true); // capture phase
 
-    imeInput.addEventListener('keypress', (e) => {
+    document.addEventListener('keyup', (e) => {
+      if (!gameActive) return;
+      if (e.keyCode === 229) return;
+      if (isComposing) return;
+      psKeyUp(e.keyCode);
+    }, true);
+
+    document.addEventListener('keypress', (e) => {
+      if (!gameActive) return;
       if (isComposing) return;
       const cc = e.charCode || e.which;
       if (cc > 0) psKeyPress(cc);
-    });
+    }, true);
 
-    imeInput.addEventListener('keyup', (e) => {
-      if (isComposing) return;
-      psKeyUp(e.keyCode);
-    });
-
-    document.addEventListener('click', () => imeInput.focus(), true);
-    document.addEventListener('touchstart', () => imeInput.focus(), true);
-    Application.rootElement.addEventListener('click', () => imeInput.focus(), true);
-    window.addEventListener('load', () => imeInput.focus());
   </script>
 </body>
 </html>
