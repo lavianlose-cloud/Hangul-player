@@ -94,22 +94,28 @@
       psKeyUp(8);
     }
 
-    imeInput.addEventListener('compositionstart', () => { isComposing = true; });
+    imeInput.addEventListener('compositionstart', () => {
+      isComposing = true;
+      console.log('[IME] start');
+    });
 
     imeInput.addEventListener('compositionupdate', (e) => {
       isComposing = true;
+      console.log('[IME] update data="' + e.data + '" preview="' + previewChar + '"');
       if (!e.data) return;
-      // 이전 미리보기 글자 삭제
-      if (previewChar !== null) psBackspace();
-      // 현재 조합 중인 글자 전송 (실시간 반영)
+      if (previewChar !== null) {
+        console.log('[IME] Backspace to remove preview "' + previewChar + '"');
+        psBackspace();
+      }
       psKeyPress(e.data.codePointAt(0));
       previewChar = e.data;
     });
 
     imeInput.addEventListener('compositionend', (e) => {
       isComposing = false;
-      // 미리보기 글자 삭제 후 확정된 글자 전송
+      console.log('[IME] end data="' + e.data + '" preview="' + previewChar + '"');
       if (previewChar !== null) {
+        console.log('[IME] Backspace to remove final preview "' + previewChar + '"');
         psBackspace();
         previewChar = null;
       }
